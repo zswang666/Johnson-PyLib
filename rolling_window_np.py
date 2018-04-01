@@ -52,7 +52,6 @@ def rolling_window(a, window, strides):
                 >> print(mat2[1,1])
                 array([[10, 11],
                        [14, 15]])
-        @author: Johnson Wang, johnsonwang0810 at gmail dot com
     """
     assert len(a.shape)==len(window)==len(strides), "\'a\', \'window\', \'strides\' dimension mismatch"
     shape_fn = lambda i,w,s: (a.shape[i]-w)//s + 1
