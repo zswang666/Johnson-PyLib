@@ -24,11 +24,11 @@ def rolling_window(a, window, strides):
     """ Perform rolling/sliding window over a multi-dimensional array
             Args:
                 a (np.ndarray): array to perform rolling window to
-                window (tuple or list):  
-                strides (tuple or list): 
+                window (tuple or list): window array to be rolled
+                strides (tuple or list): strides for rolling window
             Returns:
                 patches (np.ndarray): all sliding window on `a` defined by `window` and `strides` 
-            Note:
+            Notes:
                 1. For performance, this function do not perform sanity check. Please use it carefully.
             Examples:
                 >> mat = np.arange(16).reshape((4,4))

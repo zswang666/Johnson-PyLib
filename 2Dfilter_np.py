@@ -36,7 +36,7 @@ def bilateral(L, window_size, sigma_s, sigma_r):
                 sigma_r (float): sigma in range term
             Returns:
                 LB (np.ndarray): filtered image
-            Note:
+            Notes:
                 1. depends on rolling_window_np.py
             Todo:
                 - add padding mode argument (constant/symmetric/reflec....)
