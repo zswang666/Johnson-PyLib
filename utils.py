@@ -1,5 +1,7 @@
 import os
+import sys
 import importlib
+import h5py
 
 def dynamic_import(module_name):
     """ Dynamically import module according to its name
@@ -43,6 +45,7 @@ def validate_dir(*dir_name, **kwargs):
     dir_name = os.path.join(*dir_name)
     if auto_mkdir and not os.path.isdir(dir_name):
         os.makedirs(dir_name)
+
     return dir_name
 
 def validate_path(*path_name, **kwargs):
@@ -77,4 +80,47 @@ def validate_path(*path_name, **kwargs):
         return os.path.exists(path_name)
     if auto_mkdir and not os.path.isdir(dir_name):
         os.makedirs(dir_name)
+
     return path_name
+
+def str2bool(v):
+    """ Convert string to boolean
+        Args:
+            `v` (str): possible string to be converted to boolean
+        Returns:
+            a boolean
+    """
+    if v.lower() in ('yes', 'true', 'True', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'False', 'f', 'n', '0'):
+        return False
+    else:
+        raise ValueError('Boolean value expected.')
+
+def load_h5(fname):
+    """ load .h5 file and return a dict """
+    f = h5py.File(fname)
+    data = dict()
+    for k in f.keys():
+        data[k] = f[k][:]
+    
+    return data
+
+class Logger(object):
+    """ logger that can print on terminal and save log to file simultaneously """
+    def __init__(self, log_path):
+        """ constructor of Logger
+            Args:
+                `log_path` (str): full path to log file
+        """
+        self._log_fout = open(log_path, 'w')
+    
+    def write(self, out_str):
+        """ write log
+            Args:
+                `out_str` (str): string to be printed out and written to log file
+        """
+        self._log_fout.write(out_str+'\n')
+        self._log_fout.flush()
+        print(out_str)
+        sys.stdout.flush()
