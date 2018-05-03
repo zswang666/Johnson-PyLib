@@ -108,12 +108,17 @@ def load_h5(fname):
 
 class Logger(object):
     """ logger that can print on terminal and save log to file simultaneously """
-    def __init__(self, log_path):
+    def __init__(self, log_path, mode='w'):
         """ constructor of Logger
             Args:
                 `log_path` (str): full path to log file
         """
-        self._log_fout = open(log_path, 'w')
+        if mode == 'a':
+            self._log_fout = open(log_path, 'a')
+        elif mode == 'w':
+            self._log_fout = open(log_path, 'w')
+        else:
+            raise ValueError('Invalid mode')
     
     def write(self, out_str):
         """ write log

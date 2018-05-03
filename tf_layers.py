@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 # TODO: conv3d, max_pool3d, avg_pool3d, dropout
 
@@ -59,7 +60,7 @@ def _variable_with_weight_decay(name, shape, wd, initializer, id=0, dtype=tf.flo
         tf.add_to_collection('losses', weight_decay)
     return var
 
-def batch_norm(scope, inputs, is_training, bn_decay, data_format='NCHW'):
+def batch_norm(scope, inputs, is_training, bn_decay, data_format='NHWC'):
     """ tensorflow layer: Batch normalization
         Args:
             `scope` (str): scope of this layer
@@ -70,6 +71,7 @@ def batch_norm(scope, inputs, is_training, bn_decay, data_format='NCHW'):
         Returns:
             `outputs` (tensor): output tensor
     """
+    bn_decay = bn_decay if bn_decay is not None else 0.9
     outputs = tf.contrib.layers.batch_norm(inputs, center=True, scale=True,
                                            is_training=is_training, decay=bn_decay,
                                            updates_collections=None, scope=scope, 
@@ -119,7 +121,7 @@ def conv1d(scope, inputs, num_output_channels, kernel_size, stride=1, padding='S
         outputs = tf.nn.bias_add(outputs, biases, data_format=data_format)
         # perform batch normalization if set
         if bn:
-            outputs = batch_norm('bn', outputs, is_training, bn_decay=bn, data_format=data_format)
+            outputs = batch_norm('bn', outputs, is_training, bn_decay=bn_decay, data_format=data_format)
         # perform activation
         if activation_fn is not None:
             outputs = activation_fn(outputs)
@@ -169,7 +171,7 @@ def conv2d(scope, inputs, num_output_channels, kernel_size, stride=[1,1], paddin
         outputs = tf.nn.bias_add(outputs, biases, data_format=data_format)
         # perform batch normalization if set
         if bn:
-            outputs = batch_norm('bn', outputs, is_training, bn_decay=bn, data_format=data_format)
+            outputs = batch_norm('bn', outputs, is_training, bn_decay=bn_decay, data_format=data_format)
         # perform activation
         if activation_fn is not None:
             outputs = activation_fn(outputs)
@@ -235,7 +237,7 @@ def conv2d_transpose(scope, inputs, num_output_channels, kernel_size, stride=[1,
         outputs = tf.nn.bias_add(outputs, biases, data_format=data_format)
         # perform batch normalization if set
         if bn:
-            outputs = batch_norm('bn', outputs, is_training, bn_decay=bn, data_format=data_format)
+            outputs = batch_norm('bn', outputs, is_training, bn_decay=bn_decay, data_format=data_format)
         # perform activation
         if activation_fn is not None:
             outputs = activation_fn(outputs)
@@ -260,18 +262,18 @@ def fully_connected(scope, inputs, num_outputs, initializer=tf.contrib.layers.xa
     """
     with tf.variable_scope(scope):
         # specify weights and biases
-        B, N = inputs.get_shape().as_list()
+        N = inputs.get_shape()[-1].value
         weight = _variable_with_weight_decay('weights',
                                              shape=[N, num_outputs],
                                              wd=weight_decay,
                                              initializer=initializer)
         biases = _get_variable('biases', [num_outputs],
-                                  tf.constant_initializer(0.0))
+                               tf.constant_initializer(0.0))
         # perform fully connected layer
         outputs = tf.nn.bias_add(tf.matmul(inputs, weight), biases)
         # perform batch normalization if set
         if bn:
-            outputs = batch_norm('bn', outputs, is_training, bn_decay=bn)
+            outputs = batch_norm('bn', outputs, is_training, bn_decay=bn_decay)
         # perform activation
         if activation_fn is not None:
             outputs = activation_fn(outputs)
@@ -350,3 +352,137 @@ def get_lr_expdecay(step, base_lr, decay_steps, decay_rate, end_lr, staircase=Fa
             staircase=staircase)
     lr = tf.maximum(lr, end_lr) # clipping to end learning rate
     return lr
+
+def get_bn_decay(step, base_bn, decay_step, decay_rate, end_bn, staircase=False):
+    """ get batch normalization decay tf operation """
+    bn_momentum = tf.train.exponential_decay(
+                        base_bn,
+                        step,
+                        decay_step,
+                        decay_rate,
+                        staircase=staircase)
+    bn_decay = tf.minimum(end_bn, 1 - bn_momentum)
+    return bn_decay
+
+def tf_accuracy(correct_labels, predict_labels, tensor_name='accuracy'):
+    """ compute accuracy and return a tensorflow summary
+        Args:
+            `correct_labels` : true classification categories
+            `predict_labels` : predicted classification categories
+            `tensor_name` (str): Name for the output summay tensor
+        Returns:
+            `summary` (tf summary): TensorFlow summary
+            `acc` (float): accuracy
+    """
+    from sklearn.metrics import accuracy_score
+    acc = accuracy_score(correct_labels, predict_labels)
+    summary = tf.Summary(value=[
+        tf.Summary.Value(tag=tensor_name, simple_value=acc), 
+    ])
+    return summary, acc
+
+def tf_mean_accuracy(correct_labels, predict_labels, tensor_name='mean accuracy'):
+    """ compute mean (average class) accuracy and return a tensorflow summary
+        Args:
+            `correct_labels` : true classification categories
+            `predict_labels` : predicted classification categories
+            `tensor_name` (str): Name for the output summay tensor
+        Returns:
+            `summary` (tf summary): TensorFlow summary
+            `mean_acc` (float): mean accuracy
+    """
+    from sklearn.metrics import accuracy_score
+    labels = np.unique(correct_labels)
+    mean_acc = []
+    for l in labels:
+        valid_idx = (correct_labels==l)
+        gt = correct_labels[valid_idx]
+        pd = predict_labels[valid_idx]
+        mean_acc.append(accuracy_score(gt, pd))
+    mean_acc = np.mean(mean_acc)
+    summary = tf.Summary(value=[
+        tf.Summary.Value(tag=tensor_name, simple_value=mean_acc),
+    ])
+    return summary, mean_acc
+
+def tf_precision(correct_labels, predict_labels, tensor_name='precision', average='macro'):
+    """ compute precision and return a tensorflow summary
+        Args:
+            `correct_labels` : true classification categories
+            `predict_labels` : predicted classification categories
+            `tensor_name` (str): Name for the output summay tensor
+            `average` (str): 'precision_score' params, 
+                    check http://scikit-learn.org/stable/modules/generated/sklearn.metrics.precision_score.html 
+        Returns:
+            `summary` (tf summary): TensorFlow summary
+            `p` (float): precision
+        Notes:
+            1. average='macro' is to calculate metrics for each label, and find their unweighted mean
+    """
+    from sklearn.metrics import precision_score
+    p = precision_score(correct_labels, predict_labels, average=average)
+    summary = tf.Summary(value=[
+        tf.Summary.Value(tag=tensor_name, simple_value=p), 
+    ])
+    return summary, p
+
+def tf_confusion_matrix(correct_labels, predict_labels, labels, title='Confusion Matrix', tensor_name='confusion matrix', normalize=False):
+    ''' plot confusion matrix and return a tensorflow summary
+        see https://stackoverflow.com/questions/41617463/tensorflow-confusion-matrix-in-tensorboard 
+        Args:
+            `correct_labels` : true classification categories
+            `predict_labels` : predicted classification categories
+            `labels` : a list of labels which will be used to display the axix labels
+            `title` (str): Title for the matrix
+            `tensor_name` (str): Name for the output summay tensor
+        Returns:
+            `summary` (tf summary): TensorFlow summary
+            `cm` : 
+        Notes:
+            1. Depending on the number of category and the data , you may have to modify the figzie, font sizes etc. 
+            2. Currently, some of the ticks dont line up due to rotations.
+        Todo:
+            1. complete doc
+    '''
+    import re
+    from textwrap import wrap
+    import itertools
+    import matplotlib
+    import tfplot
+    from sklearn.metrics import confusion_matrix
+    
+    cm = confusion_matrix(correct_labels, predict_labels)
+    if normalize:
+        cm = cm.astype('float')*10 / cm.sum(axis=1)[:, np.newaxis]
+        cm = np.nan_to_num(cm, copy=True)
+        cm = cm.astype('int')
+
+    np.set_printoptions(precision=2)
+
+    fig = matplotlib.figure.Figure(figsize=(7, 7), dpi=320, facecolor='w', edgecolor='k')
+    ax = fig.add_subplot(1, 1, 1)
+    im = ax.imshow(cm, cmap='Oranges')
+
+    classes = [re.sub(r'([a-z](?=[A-Z])|[A-Z](?=[A-Z][a-z]))', r'\1 ', x) for x in labels]
+    classes = ['\n'.join(wrap(l, 40)) for l in classes]
+
+    tick_marks = np.arange(len(classes))
+
+    ax.set_xlabel('Predicted', fontsize=7)
+    ax.set_xticks(tick_marks)
+    c = ax.set_xticklabels(classes, fontsize=4, rotation=-90,  ha='center')
+    ax.xaxis.set_label_position('bottom')
+    ax.xaxis.tick_bottom()
+
+    ax.set_ylabel('True Label', fontsize=7)
+    ax.set_yticks(tick_marks)
+    ax.set_yticklabels(classes, fontsize=4, va ='center')
+    ax.yaxis.set_label_position('left')
+    ax.yaxis.tick_left()
+
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        ax.text(j, i, format(cm[i, j], 'd') if cm[i,j]!=0 else '.', horizontalalignment="center", fontsize=6, verticalalignment='center', color= "black")
+    fig.set_tight_layout(True)
+    summary = tfplot.figure.to_summary(fig, tag=tensor_name)
+
+    return summary, cm
